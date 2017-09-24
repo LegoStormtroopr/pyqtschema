@@ -36,7 +36,7 @@ setup(
     keywords='qt json json-schema',
 
     packages=find_packages(exclude=["contrib", "docs", "tests*"]),
-    install_requires = ["pyqt5", "click", "jsonschema"],
+    install_requires = ["pyqt5", "click", "jsonschema", "requests", "uritools"],
 )
 
 
