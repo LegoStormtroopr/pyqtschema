@@ -79,15 +79,16 @@ class MainWindow(QtWidgets.QWidget):
         """
             Load a schema and create the root element.
         """
-        schema_path = Path(file_path).absolute()
-        with open(schema_path) as f:
+        schema_path = Path(file_path) #.absolute()
+        schema_path_absolute = Path(file_path).absolute()
+        with schema_path.open() as f:
             schema = json.loads(f.read(), object_pairs_hook=collections.OrderedDict)
 
         Draft4Validator.check_schema(schema)
 
         schema_title = schema.get("title", "<root>")
         self.setWindowTitle("{} - PyQt JSON Schema".format(schema_title))
-        self.schema_widget = create_widget(schema_title, schema, schema_path.as_uri())
+        self.schema_widget = create_widget(schema_title, schema, schema_path_absolute.as_uri())
         self.content_region.setWidget(self.schema_widget)
         self.content_region.setWidgetResizable(True)
         self.schema = schema

@@ -394,7 +394,22 @@ class JSONBooleanWidget(JSONPrimitiveBaseWidget):
         self._primitive_widget.setChecked(data)
 
 
-class JSONArrayWidget(JSONBaseWidget, QtWidgets.QWidget):
+class JSONArrayBaseWidget(JSONBaseWidget):
+    def _get_item_schema(self, index):
+        if isinstance(self.items_schema, list):
+            try:
+                schema = self.items_schema[index]
+            except IndexError:
+                schema = self.additional_item_schema
+                assert schema is not None
+        else:
+            assert isinstance(self.items_schema, dict)
+            schema = self.items_schema
+
+        return schema
+
+
+class JSONArrayWidget(JSONArrayBaseWidget, QtWidgets.QWidget):
     """Widget representation of an array.
 
     Arrays can contain multiple objects of a type, or they can contain objects of specific types.
@@ -407,7 +422,7 @@ class JSONArrayWidget(JSONBaseWidget, QtWidgets.QWidget):
         self.controls_layout = QtWidgets.QHBoxLayout()
         self.items_layout = QtWidgets.QVBoxLayout()
 
-        label = QtWidgets.QLabel(name, self)
+        label = QtWidgets.QLabel(schema.get('title', name), self)
         label.setStyleSheet("QLabel { font-weight: bold; }")
         if "description" in schema:
             label.setToolTip(schema['description'])
@@ -496,21 +511,104 @@ class JSONArrayWidget(JSONBaseWidget, QtWidgets.QWidget):
         index = self.items_list.indexFromItem(current).row()
         self.widget_stack.setCurrentIndex(index)
 
-    def _get_item_schema(self, index):
-        if isinstance(self.items_schema, list):
-            try:
-                schema = self.items_schema[index]
-            except IndexError:
-                schema = self.additional_item_schema
-                assert schema is not None
-        else:
-            assert isinstance(self.items_schema, dict)
-            schema = self.items_schema
 
-        return schema
+class JSONArrayTabWidget(JSONArrayBaseWidget, QtWidgets.QWidget):
+    def __init__(self, name: str, schema: dict, ctx: Context, parent: JSONBaseWidget):
+        super().__init__(name, schema, ctx, parent)
+        self.layout = QtWidgets.QVBoxLayout()
+        self.controls_layout = QtWidgets.QHBoxLayout()
+        self.items_layout = QtWidgets.QVBoxLayout()
+
+        label = QtWidgets.QLabel(schema.get('title', name), self)
+        label.setStyleSheet("QLabel { font-weight: bold; }")
+        if "description" in schema:
+            label.setToolTip(schema['description'])
+
+        append_button = QtWidgets.QPushButton("", self)
+        icon = append_button.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
+        append_button.setIcon(icon)
+        append_button.clicked.connect(self.click_add)
+        size_policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Maximum,
+                                            QtWidgets.QSizePolicy.Maximum)
+        append_button.setSizePolicy(size_policy)
+
+        self.controls_layout.addWidget(label)
+        self.controls_layout.addWidget(append_button)
+
+        self.layout.addLayout(self.controls_layout)
+
+        self.tabs = QtWidgets.QTabWidget(self)
+        self.tabs.setTabsClosable(True)
+        self.tabs.setMovable(True)
+        self.tabs.tabCloseRequested.connect(self.remove_item)
+        self.tabs.currentChanged.connect(self.rename_tab)
+
+        self.tabs.tabBar().tabMoved.connect(self._item_moved)
+
+        self.layout.addWidget(self.tabs)
+
+        self.setLayout(self.layout)
+
+        try:
+            self.items_schema = schema['items']
+        except KeyError:
+            raise UnsupportedSchemaError("Arrays require items")
+
+        self.additional_item_schema = schema.get("additionalItems")
+
+    def _item_moved(self, from_index, to_index):
+        pass
+
+    def remove_item(self, index):
+        self.tabs.removeTab(index)
+
+    @classmethod
+    def supports_schema(cls, schema):
+        return (
+            schema.get('type') == 'array' and schema.get('items').get('type') == "object"
+        )
+
+    def add_item(self, data=None):
+        index = self.tabs.count()
+        schema = self._get_item_schema(index)
+        obj = _create_widget("Item #{:d}".format(index), schema, self.ctx, self)
+
+        self.tabs.addTab(obj, "# {}".format(index))
+
+        if data is not None and data.keys():
+            self.rename_tab(index)
+            obj.load_json_object(data)
+
+    def rename_tab(self, index):
+        data = self.tabs.widget(index).dump_json_object()
+        title = self.items_schema.get('title', "Item")
+        self.tabs.setTabText(index, "{} #{}".format(title, index))
+        # first_property = list(self.items_schema['properties'].items())[0][0]
+        # self.tabs.setTabText(
+        #     index,
+        #     "{title} [{p}: {v}]".format(
+        #         title=title,
+        #         p=first_property,
+        #         v=str(data.get(first_property))
+        #     )
+        # )
+
+    def click_add(self):
+        self.add_item()
+
+    def dump_json_object(self):
+        return [w.dump_json_object() for w in iter_widgets(self.tabs)]
+
+    def load_json_object(self, data):
+        for i, datum in enumerate(data):
+            if i < self.tabs.count():
+                self.tabs.widget(i).load_json_object(datum)
+            else:
+                self.add_item(datum)
 
 
 supported_widgets = (
+    JSONArrayTabWidget,
     JSONObjectWidget,
     JSONEnumWidget,
     JSONIntegerWidget,
